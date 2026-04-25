@@ -1,0 +1,64 @@
+name: OTP Service Production CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # 1. Code Quality
+  sonarqube:
+    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_sonarqube.yml@main
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  # 2. Dependency Scan
+  snyk:
+    needs: sonarqube
+    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_snyk.yml@main
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  # 3. Build & Push
+  docker:
+    needs: snyk
+    if: github.event_name == 'push'
+    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_docker-ci.yml@main
+    with:
+      image-name: quickhaul-otp
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  # 4. Container Scan
+  trivy:
+    needs: docker
+    if: github.event_name == 'push'
+    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_trivy.yml@main
+    with:
+      image-name: quickhaul-otp
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+
+  # 5. Vulnerability Notification
+  notify-vulnerabilities:
+    needs: [sonarqube, snyk, trivy]
+    # Runs if ANY of the scanning/quality steps fail
+    if: always() && (needs.sonarqube.result == 'failure' || needs.snyk.result == 'failure' || needs.trivy.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Brevo Email Notification
+        run: |
+          curl --request POST \
+            --url https://api.brevo.com/v3/smtp/email \
+            --header 'accept: application/json' \
+            --header 'api-key: ${{ secrets.BREVO_API_KEY }}' \
+            --header 'content-type: application/json' \
+            --data '{
+              "sender": {"name": "QuickHaul CI/CD Security", "email": "security@quickhaul.com"},
+              "to": [{"email": "${{ secrets.ALERT_EMAIL }}", "name": "Security Team"}],
+              "subject": "🚨 Critical: Security or Quality Failure in OTP Service",
+              "htmlContent": "<h3>Security / Quality Alert</h3><p>A failure was detected by <b>SonarQube</b>, <b>Snyk</b>, or <b>Trivy</b> during the CI build for <b>otp-service</b>.</p><p>Please check the <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">GitHub Actions Logs</a> immediately to resolve the vulnerabilities or code quality issues.</p>"
+            }'
