@@ -54,6 +54,8 @@ jobs:
     name: sca / Snyk Scan
     needs: sast
     uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_snyk.yml@feature/templates
+    with:
+      args: --file=requirements.txt --command=python3
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
