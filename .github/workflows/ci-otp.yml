@@ -45,7 +45,7 @@ jobs:
   # 2. Code Quality
   sonarqube:
     needs: test
-    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_sonarqube.yml@main
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_sonarqube.yml@main
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -53,7 +53,7 @@ jobs:
   # 3. Dependency Scan
   snyk:
     needs: sonarqube
-    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_snyk.yml@main
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_snyk.yml@main
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
@@ -61,7 +61,7 @@ jobs:
   docker:
     needs: snyk
     if: github.event_name == 'push'
-    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_docker-ci.yml@main
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_docker-ci.yml@main
     with:
       image-name: quickhaul-otp
     secrets:
@@ -72,7 +72,7 @@ jobs:
   trivy:
     needs: docker
     if: github.event_name == 'push'
-    uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_trivy.yml@main
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_trivy.yml@main
     with:
       image-name: quickhaul-otp
     secrets:
