@@ -1,121 +1,97 @@
 name: OTP Service Production CI
 
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
 on:
   push:
     branches: 
-      - main
+      - main 
       - develop
       - feature/ci-otp
   pull_request:
-    branches:
-      - main
+    branches: 
+      - main 
       - develop
-      - feature/ci-otp
-
-  workflow_dispatch:
 
 jobs:
-  # 0. Initial Test Suite
+  # 1. Unit Tests & Coverage
   test:
-    name: unit-test / Pytest & Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-cov httpx
+          
       - name: Run tests with coverage
-        env:
-          PYTHONPATH: .
         run: |
-          pytest --cov=. --cov-report=xml --cov-report=term-missing tests/
+          python -m pytest --cov=. --cov-report=xml
+          
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
 
-  # 1. Code Quality (SAST)
-  sast:
-    name: sast / SonarQube Analysis
+  # 2. Code Quality (SonarQube)
+  sonarqube:
     needs: test
     uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_sonarqube.yml@feature/templates
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-  # 2. Dependency Scan (SCA) For python
-  sca:
-    name: sca / Snyk Scan
-    needs: sast
+  # 3. Dependency Scan (Snyk)
+  snyk:
+    needs: sonarqube
     uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_snyk-python.yml@feature/templates
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  # 3. Build & Scan Image
-  build:
-    name: build / Build & Scan Image
-    needs: sca
+  # 4. Build & Push
+  ghcr:
+    needs: [sonarqube, snyk]
     if: github.event_name == 'push'
     uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_docker-ci.yml@feature/templates
     with:
       image-name: quickhaul-otp
     secrets:
-      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-      DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
+      DOCKER_USERNAME: ${{ github.actor }}
+      DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-  # 4. Publish Image (Placeholder if separate in templates)
-  publish:
-    name: publish / Publish Image
-    needs: build
-    if: false # Controlled by docker-ci workflow usually
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Image published via Docker-CI"
+  # 5. Container Scan (Trivy)
+  trivy:
+    needs: ghcr
+    if: github.event_name == 'push'
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_trivy.yml@feature/templates
+    with:
+      image-name: quickhaul-otp
+    secrets:
+      DOCKER_USERNAME: ${{ github.actor }}
+      DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-  # 5. Notifications for SCA (Snyk)
-  notify-snyk:
-    name: notify-snyk / Send Email Alert
-    needs: sca
-    if: failure() && needs.sca.result == 'failure'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Snyk Failure Notification
-        run: |
-          curl --request POST \
-            --url https://api.brevo.com/v3/smtp/email \
-            --header 'accept: application/json' \
-            --header 'api-key: ${{ secrets.BREVO_API_KEY }}' \
-            --header 'content-type: application/json' \
-            --data '{
-              "sender": {"name": "QuickHaul Security", "email": "security@quickhaul.com"},
-              "to": [{"email": "${{ secrets.ALERT_EMAIL }}", "name": "Security Team"}],
-              "subject": "🚨 Snyk Security Failure: OTP Service",
-              "htmlContent": "<h3>Snyk Scan Failed</h3><p>Vulnerabilities detected in <b>otp-service</b> dependencies.</p>"
-            }'
-
-  # 6. Notifications for Build/Trivy
-  notify-trivy:
-    name: notify-trivy / Send Email Alert
-    needs: build
-    if: failure() && needs.build.result == 'failure'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Trivy Failure Notification
-        run: |
-          curl --request POST \
-            --url https://api.brevo.com/v3/smtp/email \
-            --header 'accept: application/json' \
-            --header 'api-key: ${{ secrets.BREVO_API_KEY }}' \
-            --header 'content-type: application/json' \
-            --data '{
-              "sender": {"name": "QuickHaul Security", "email": "security@quickhaul.com"},
-              "to": [{"email": "${{ secrets.ALERT_EMAIL }}", "name": "Security Team"}],
-              "subject": "🚨 Trivy/Build Failure: OTP Service",
-              "htmlContent": "<h3>Build or Trivy Scan Failed</h3><p>Container security or build failure in <b>otp-service</b>.</p>"
-            }'
+  # 6. Failure Notification
+  notification:
+    needs: [sonarqube, snyk, ghcr, trivy]
+    if: failure()
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_notify.yml@feature/templates
+    with:
+      subject: "CI/CD Failure: OTP Service"
+      body: "The production pipeline for otp-service has failed. Please check the GitHub Actions logs for details."
+    secrets:
+      BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
