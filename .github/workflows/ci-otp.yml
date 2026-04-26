@@ -11,6 +11,7 @@ on:
       - main
       - develop
       - feature/ci-otp
+      
   workflow_dispatch:
 
 jobs:
@@ -43,7 +44,7 @@ jobs:
   sast:
     name: sast / SonarQube Analysis
     needs: test
-    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_sonarqube.yml@main
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_sonarqube.yml@feature/templates
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -52,7 +53,7 @@ jobs:
   sca:
     name: sca / Snyk Scan
     needs: sast
-    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_snyk.yml@main
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_snyk.yml@feature/templates
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
@@ -61,7 +62,7 @@ jobs:
     name: build / Build & Scan Image
     needs: sca
     if: github.event_name == 'push'
-    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_docker-ci.yml@main
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_docker-ci.yml@feature/templates
     with:
       image-name: quickhaul-otp
     secrets:
