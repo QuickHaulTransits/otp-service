@@ -12,7 +12,7 @@ on:
       - main
       - develop
       - feature/ci-otp
-      
+
   workflow_dispatch:
 
 jobs:
