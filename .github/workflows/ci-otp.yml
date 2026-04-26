@@ -2,27 +2,62 @@ name: OTP Service Production CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: 
+      - main
+      - develop
+      - feature/ci-otp
+
   pull_request:
-    branches: [ main, develop ]
+    branches :
+      - main
+      - develop
+      - feature/ci-otp
+      
   workflow_dispatch:
 
 jobs:
-  # 1. Code Quality
+  # 1. Unit Tests & Coverage
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=. --cov-report=xml --cov-report=term-missing tests/
+          
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # 2. Code Quality
   sonarqube:
+    needs: test
     uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_sonarqube.yml@main
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-  # 2. Dependency Scan
+  # 3. Dependency Scan
   snyk:
     needs: sonarqube
     uses: QuickHaulTransits/quickhaul-shared/.github/workflows/_snyk.yml@main
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  # 3. Build & Push
+  # 4. Build & Push
   docker:
     needs: snyk
     if: github.event_name == 'push'
@@ -33,7 +68,7 @@ jobs:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
 
-  # 4. Container Scan
+  # 5. Container Scan
   trivy:
     needs: docker
     if: github.event_name == 'push'
@@ -43,11 +78,11 @@ jobs:
     secrets:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
 
-  # 5. Vulnerability Notification
+  # 6. Vulnerability Notification
   notify-vulnerabilities:
-    needs: [sonarqube, snyk, trivy]
+    needs: [test, sonarqube, snyk, trivy]
     # Runs if ANY of the scanning/quality steps fail
-    if: always() && (needs.sonarqube.result == 'failure' || needs.snyk.result == 'failure' || needs.trivy.result == 'failure')
+    if: always() && (needs.test.result == 'failure' || needs.sonarqube.result == 'failure' || needs.snyk.result == 'failure' || needs.trivy.result == 'failure')
     runs-on: ubuntu-latest
     steps:
       - name: Send Brevo Email Notification
