@@ -11,7 +11,7 @@ on:
       - main
       - develop
       - feature/ci-otp
-      
+
   workflow_dispatch:
 
 jobs:
@@ -121,3 +121,4 @@ jobs:
               "subject": "🚨 Trivy/Build Failure: OTP Service",
               "htmlContent": "<h3>Build or Trivy Scan Failed</h3><p>Container security or build failure in <b>otp-service</b>.</p>"
             }'
+##
