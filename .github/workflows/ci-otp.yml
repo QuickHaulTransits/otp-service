@@ -49,7 +49,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-  # 2. Dependency Scan (SCA)
+  # 2. Dependency Scan (SCA) For python
   sca:
     name: sca / Snyk Scan
     needs: sast
