@@ -57,7 +57,7 @@ jobs:
 
   # 3. Dependency Scan (Snyk)
   snyk:
-    needs: sonarqube
+    needs: test
     uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_snyk-python.yml@feature/templates
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -84,9 +84,21 @@ jobs:
       DOCKER_USERNAME: ${{ github.actor }}
       DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-  # 6. Failure Notification
+  # 6. GitOps CD (Update Image Tag)
+  deploy:
+    needs: trivy
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_cd-template.yml@main
+    with:
+      service-name: "otp-service"
+      image-tag: ${{ github.sha }}
+      environment: ${{ github.ref == 'refs/heads/main' && 'main' || 'develop' }}
+    secrets:
+      HELM_REPO_PAT: ${{ secrets.HELM_REPO_PAT }}
+
+  # 7. Failure Notification
   notification:
-    needs: [sonarqube, snyk, ghcr, trivy]
+    needs: [sonarqube, snyk, ghcr, trivy, deploy]
     if: failure()
     uses: QuickHaulTransits/quickhaul-templates/.github/workflows/_notify.yml@feature/templates
     with:
